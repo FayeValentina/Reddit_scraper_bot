@@ -4,34 +4,53 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Reddit-to-Twitter bot system that scrapes Reddit comments and automatically posts high-quality content to Twitter via a Telegram bot interface. The system consists of five main components:
-
-1. **Reddit Scraper** (`reddit_scraper.py`) - Async Reddit scraper using asyncpraw with 6 sorting methods and concurrent processing
-2. **Telegram Bot** (`bot.py`) - Main bot interface with comprehensive user interaction, Twitter posting, and automated workflows
-3. **Data Processor** (`data_processor.py`) - SQLite database operations for storing comments with Twitter metadata and AI assessment data
-4. **Configuration Manager** (`config_manager.py`) - Runtime configuration management with GUI interface via Telegram
-5. **AI Quality Filter** - Google Gemini 2.5 Flash-Lite Preview for intelligent comment quality assessment
+This is a modular Reddit-to-Twitter bot system that scrapes Reddit comments and automatically posts high-quality content to Twitter via a Telegram bot interface. The system has been refactored into specialized modules for better maintainability and scalability.
 
 ## Core Architecture
 
-### Bot Flow (bot.py:1886 lines)
-- **Manual Posting**: User sends message → Bot confirmation → User confirms → Twitter post with database logging
+### Modular Design (Post-Refactoring)
+
+The system now consists of **8 specialized modules**:
+
+1. **Main Bot Controller** (`bot.py`) - Telegram bot interface and command handling
+2. **Twitter API Manager** (`twitter_manager.py`) - All Twitter API operations and error handling
+3. **AI Quality Evaluator** (`ai_evaluator.py`) - Google Gemini 2.5 Flash-Lite integration for content assessment
+4. **Auto Scraper Manager** (`auto_scraper_manager.py`) - Reddit scraping workflow and posting logic
+5. **Health Monitor** (`health_monitor.py`) - HTTP server, webhooks, and system monitoring
+6. **Reddit Scraper** (`reddit_scraper.py`) - Async Reddit API integration with concurrent processing
+7. **Data Processor** (`data_processor.py`) - SQLite database operations and data management
+8. **Configuration Manager** (`config_manager.py`) - Runtime configuration with GUI interface
+
+### Enhanced Error Handling
+
+The bot now provides comprehensive error reporting when Twitter posting fails:
+- **Content Display**: Shows the exact content that failed to post
+- **Source Information**: Displays Reddit comment metadata (subreddit, score, AI assessment)
+- **Error Classification**: Categorizes errors (permission, authentication, duplicate, forbidden, etc.)
+- **Resolution Guidance**: Provides specific troubleshooting steps for each error type
+
+### Bot Flow
+
+- **Manual Posting**: User sends message → Bot confirmation → User confirms → Twitter post with detailed error feedback
 - **Manual Reddit Workflow**: `/scrape_now` command → Uses configured subreddits → AI filtering → Auto-posts best comments
-- **Automated Workflow**: Background timer-based scraper → AI quality assessment → Smart duplicate detection → Auto-posting
+- **Automated Workflow**: Background timer-based scraper → AI quality assessment → Smart duplicate detection → Auto-posting with failure notifications
 - **Interactive Configuration**: `/settings` provides full GUI for runtime parameter adjustment
 - **Comprehensive Diagnostics**: `/test_twitter` with detailed API permissions and connection testing
 - **Twitter API Integration**: OAuth 1.0a with v1.1 media upload and v2 tweet creation
 - **Health Monitoring**: Built-in HTTP server for uptime monitoring and webhook handling
 
 ### Data Flow
+
 1. **Concurrent Reddit Scraping**: AsyncRedditScraper fetches multiple subreddits simultaneously using asyncpraw
 2. **Intelligent Filtering**: Score-based pre-filtering → AI batch processing → Confidence-based selection
 3. **Smart Duplicate Detection**: 7-day content history check before posting to prevent repetition
-4. **Database Persistence**: All comments stored with AI assessment metadata and Twitter integration fields
-5. **Real-time Notifications**: Telegram notifications for all bot activities and errors
-6. **Performance Optimization**: Batch API calls, concurrent processing, semaphore-controlled rate limiting
+4. **Enhanced Error Handling**: Failed posts now include content, source info, and resolution guidance
+5. **Database Persistence**: All comments stored with AI assessment metadata and Twitter integration fields
+6. **Real-time Notifications**: Telegram notifications for all bot activities, errors, and failed post content
+7. **Performance Optimization**: Batch API calls, concurrent processing, semaphore-controlled rate limiting
 
 ### Database Schema
+
 - `reddit_comments`: Core table with fields (`comment_id`, `post_id`, `author`, `body`, `score`, `created_utc`, `parent_id`, `is_submitter`, `subreddit`, `tweet_id`, `sent_at`, `confidence`, `reason`, `api_call_count`)
 - `bot_config`: Runtime configuration table (`config_key`, `config_value`, `config_type`, `description`, `updated_at`)
 
@@ -80,35 +99,103 @@ sqlite3 reddit_data.db ".schema"
 - `python-dotenv` - Environment variable management
 - **Built-in**: `sqlite3` (database), `asyncio` (concurrency), `logging` (monitoring)
 
-## Implementation Architecture
+## Module Architecture
 
-### Authentication & Security
+### 1. Main Bot Controller (`bot.py`)
+**Responsibility**: Telegram bot interface and user interaction
+- **Functions**: Command handling, user authentication, message processing, configuration GUI
+- **Key Features**: Interactive settings, status monitoring, manual tweet posting
+- **Dependencies**: All other modules for coordination
+
+### 2. Twitter API Manager (`twitter_manager.py`)
+**Responsibility**: Twitter API operations and media handling
+- **Functions**: Tweet posting (text/image), API connection testing, error classification
+- **Key Features**: OAuth 1.0a authentication, image optimization, structured error handling
+- **Error Types**: permission, authentication, duplicate, forbidden, file_too_large
+
+### 3. AI Quality Evaluator (`ai_evaluator.py`)
+**Responsibility**: Content quality assessment using Google Gemini
+- **Functions**: Single/batch comment evaluation, quality scoring, content filtering
+- **Key Features**: Batch processing (90% cost reduction), confidence scoring, fallback mechanisms
+- **Assessment Criteria**: Completeness, information value, standalone readability
+
+### 4. Auto Scraper Manager (`auto_scraper_manager.py`)
+**Responsibility**: Automated Reddit scraping and posting workflow
+- **Functions**: Reddit content acquisition, AI filtering, duplicate detection, auto-posting
+- **Key Features**: Concurrent scraping, intelligent selection, enhanced error notifications
+- **Error Handling**: Includes content, source info, and resolution guidance in failure notifications
+
+### 5. Health Monitor (`health_monitor.py`)
+**Responsibility**: System monitoring and webhook handling
+- **Functions**: HTTP health server, Twitter webhooks, DM forwarding, keep-alive mechanism
+- **Key Features**: Webhook signature verification, automatic uptime monitoring
+- **Endpoints**: `/health`, `/webhook/twitter` (GET/POST)
+
+### 6. Reddit Scraper (`reddit_scraper.py`)
+**Responsibility**: Async Reddit API integration
+- **Functions**: Concurrent subreddit scraping, multiple sorting methods, rate limiting
+- **Key Features**: Semaphore-controlled concurrency, backward compatibility, performance optimization
+- **Sorting Methods**: hot, new, top, controversial, rising, gilded
+
+### 7. Data Processor (`data_processor.py`)
+**Responsibility**: Database operations and data persistence
+- **Functions**: Comment storage, metadata management, schema updates
+- **Key Features**: SQLite integration, automatic schema evolution, Twitter metadata tracking
+
+### 8. Configuration Manager (`config_manager.py`)
+**Responsibility**: Runtime configuration management
+- **Functions**: Dynamic config updates, type validation, default handling
+- **Key Features**: GUI integration, type safety, persistent storage
+
+## Authentication & Security
+
 - **Single-user access**: Bot restricted to `AUTHORIZED_USER_ID` only
 - **Twitter API**: OAuth 1.0a with v1.1 media uploads + v2 tweet creation (X.com Free Tier compatible)
 - **Reddit API**: Optional username/password auth, supports read-only access
 - **AI Processing**: Gemini API key required for quality assessment
 - **Webhook Security**: HMAC-SHA256 signature verification for Twitter webhooks
 
-### Advanced Error Handling
-- **Twitter API**: Categorized error responses (401/403/duplicate) with actionable user feedback
-- **Intelligent Fallback**: AI failures → score-based sorting, maintains service continuity
-- **Graceful Degradation**: Reddit scraping errors don't crash bot, continue with available data
-- **Smart Retry Logic**: Automatic retry for transient failures, exponential backoff
-- **Comprehensive Logging**: All operations logged with structured error context
+## Advanced Error Handling
 
-### Performance Optimizations
+### Twitter Posting Failures
+When Twitter posting fails, the system now provides comprehensive error information:
+
+**Automatic Scraping Failures** (via `auto_scraper_manager.py`):
+- **Content Display**: Shows up to 200 characters of the failed content
+- **Source Information**: Reddit subreddit, score, AI confidence, and reasoning
+- **Error Classification**: Specific error types with tailored resolution guidance
+- **Context Preservation**: Complete posting context for debugging
+
+**Manual Tweet Failures** (via `bot.py`):
+- **Content Display**: Shows up to 150 characters of the failed content  
+- **Error Types**: Authentication, permission, duplicate, forbidden, file size, unknown
+- **User Guidance**: Specific troubleshooting steps for each error category
+
+### Error Categories
+- **Permission Errors**: API access level insufficient
+- **Authentication Errors**: Invalid or expired credentials
+- **Content Violations**: Community guidelines violations
+- **Duplicate Content**: Twitter's duplicate detection
+- **Technical Errors**: File size, network, or system issues
+- **Unknown Errors**: New or unclassified error types
+
+## Performance Optimizations
+
 - **Concurrent Processing**: Async Reddit scraping with semaphore-controlled rate limiting
 - **Batch AI Processing**: Configurable batch sizes reduce Gemini API calls by 90%
 - **Smart Caching**: 7-day duplicate detection with optimized database queries
 - **Resource Management**: Automatic connection pooling and cleanup
 - **Health Monitoring**: Built-in HTTP server for uptime monitoring (port 8000)
+- **Modular Architecture**: Independent modules for better resource utilization
 
-### Content Processing Pipeline
+## Content Processing Pipeline
+
 1. **Multi-subreddit Scraping**: Concurrent fetching from configured subreddits
 2. **Score-based Pre-filtering**: Extract top N comments by Reddit score
 3. **AI Quality Assessment**: Batch processing with confidence scoring (>0.8 threshold)
 4. **Duplicate Prevention**: 7-day content history check with exact matching
 5. **Smart Posting**: Automatic content truncation and Twitter optimization
+6. **Enhanced Error Handling**: Failed posts include content and diagnostic information
 
 ## Testing & Diagnostics
 
@@ -151,30 +238,35 @@ sqlite3 reddit_data.db "SELECT * FROM bot_config;"
 ## File Structure
 
 **Core Application Files:**
-- `bot.py` (1,886 lines) - Complete Telegram bot with Twitter integration, async Reddit scraping coordination, AI filtering, automated workflows, interactive configuration GUI, health monitoring, and webhook handling
-- `reddit_scraper.py` (296 lines) - Async Reddit scraper with concurrent subreddit processing, 6 sorting methods, semaphore-controlled rate limiting, and backward compatibility
-- `config_manager.py` (194 lines) - SQLite-based configuration management with type validation, default value handling, and runtime parameter updates
-- `data_processor.py` (90 lines) - Database operations for comment storage with Twitter metadata, AI assessment data, and automatic schema updates
+- `bot.py` (1,420 lines) - Main Telegram bot with modular component coordination
+- `twitter_manager.py` (209 lines) - Twitter API operations with enhanced error handling
+- `ai_evaluator.py` (223 lines) - Google Gemini integration for content quality assessment
+- `auto_scraper_manager.py` (379 lines) - Automated scraping workflow with comprehensive error reporting
+- `health_monitor.py` (186 lines) - System monitoring, webhooks, and health endpoints
+- `reddit_scraper.py` (296 lines) - Async Reddit scraper with concurrent processing
+- `data_processor.py` (90 lines) - Database operations and data persistence
+- `config_manager.py` (194 lines) - Runtime configuration management
 - `config.py` (34 lines) - Environment variable loading and configuration constants
 
 **Dependencies & Data:**
 - `requirements.txt` (7 lines) - Async-focused Python dependencies with version constraints
 - `reddit_data.db` - SQLite database with `reddit_comments` and `bot_config` tables
-- `CLAUDE.md` - Comprehensive project documentation with architecture details
+- `CLAUDE.md` - Comprehensive project documentation with modular architecture details
 - `.env` - Environment configuration (not in repository)
 - `venv/` - Python virtual environment directory
 
 **Architecture Notes:**
-- **Async-first design**: All I/O operations use asyncio for optimal performance
-- **Modular structure**: Clear separation of concerns between bot logic, scraping, data processing, and configuration
+- **Modular Design**: Clear separation of concerns with specialized modules
+- **Async-first**: All I/O operations use asyncio for optimal performance
+- **Enhanced Error Handling**: Comprehensive failure reporting with content and context
 - **No external dependencies**: Uses SQLite for persistence, built-in HTTP server for monitoring
 - **Production-ready**: Comprehensive error handling, logging, health monitoring, and graceful shutdown
 
-# User Guide
+## User Guide
 
-## Quick Start
+### Quick Start
 
-### 1. Environment Configuration
+#### 1. Environment Configuration
 
 Create a `.env` file with the following configuration:
 
@@ -206,7 +298,7 @@ APP_URL=https://your-app.com   # For health monitoring
 DATABASE_PATH=reddit_data.db   # Database file path
 ```
 
-### 2. Installation & Startup
+#### 2. Installation & Startup
 
 ```bash
 # Install dependencies
@@ -216,7 +308,7 @@ pip install -r requirements.txt
 python bot.py
 ```
 
-### 3. Bot Commands & Usage
+#### 3. Bot Commands & Usage
 
 **Primary Commands:**
 - `/start` - Initialize bot and show welcome message
@@ -230,6 +322,7 @@ python bot.py
 1. Send text message to bot → Confirmation prompt → Confirm → Posted to Twitter
 2. Send image with caption → Confirmation prompt → Confirm → Posted with media
 3. Automatic character limit handling (280 chars) and image optimization
+4. **Enhanced Error Reporting**: Failed posts show content and specific error guidance
 
 **Automated Reddit-to-Twitter Workflow:**
 1. **Configuration**: Use `/settings` to configure subreddits, intervals, and AI parameters
@@ -241,6 +334,7 @@ python bot.py
    - Duplicate detection (7-day history)
    - Smart selection and auto-posting
 4. **Monitoring**: Use `/status` to track progress and performance
+5. **Error Handling**: Failed posts include content, source info, and resolution guidance
 
 ## Advanced Configuration
 
@@ -296,6 +390,12 @@ python bot.py
 - Verify OAuth 1.0a permissions: "Read and Write" access required
 - Check rate limits and API tier access in Twitter Developer Portal
 
+**❌ Twitter Posting Failures**
+- **Enhanced Error Reporting**: Bot now shows failed content and specific resolution guidance
+- **Content Issues**: Check if content violates Twitter community guidelines
+- **API Issues**: Verify credentials and permissions using `/test_twitter`
+- **Duplicate Detection**: System shows both local and Twitter-detected duplicates
+
 **⚙️ Configuration Problems**
 - Configuration validation is built-in - invalid values will show specific error messages
 - Use `/settings` GUI instead of manual database editing
@@ -330,6 +430,7 @@ python bot.py
 - SQLite database auto-manages connections and cleanup
 - Async operations prevent blocking during I/O operations
 - Connection pooling built into asyncpraw and aiohttp clients
+- Modular architecture reduces memory footprint
 
 **API Rate Limits:**
 - All APIs configured with `wait_on_rate_limit=True`
@@ -340,3 +441,4 @@ python bot.py
 - Health endpoint available at `http://localhost:8000/health`
 - Comprehensive logging to console with structured error information
 - Real-time status via `/status` command with performance metrics
+- Enhanced error reporting for all failure scenarios
