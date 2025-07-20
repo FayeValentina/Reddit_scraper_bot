@@ -4,40 +4,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Reddit-to-Twitter bot system that scrapes Reddit comments and posts them to Twitter via a Telegram bot interface. The system consists of five main components:
+This is a Reddit-to-Twitter bot system that scrapes Reddit comments and automatically posts high-quality content to Twitter via a Telegram bot interface. The system consists of five main components:
 
-1. **Reddit Scraper** (`reddit_scraper.py`) - Uses PRAW to scrape Reddit posts and comments with 6 sorting methods
-2. **Telegram Bot** (`bot.py`) - Main interface for user interaction, Twitter posting, and automated workflows
-3. **Data Processor** (`data_processor.py`) - Handles SQLite database operations for storing comments with Twitter metadata
-4. **Configuration Manager** (`config_manager.py`) - Manages bot settings and automated scraper configuration
-5. **AI Quality Filter** - Uses Google Gemini 2.5 Flash-Lite Preview to filter high-quality comments
+1. **Reddit Scraper** (`reddit_scraper.py`) - Async Reddit scraper using asyncpraw with 6 sorting methods and concurrent processing
+2. **Telegram Bot** (`bot.py`) - Main bot interface with comprehensive user interaction, Twitter posting, and automated workflows
+3. **Data Processor** (`data_processor.py`) - SQLite database operations for storing comments with Twitter metadata and AI assessment data
+4. **Configuration Manager** (`config_manager.py`) - Runtime configuration management with GUI interface via Telegram
+5. **AI Quality Filter** - Google Gemini 2.5 Flash-Lite Preview for intelligent comment quality assessment
 
 ## Core Architecture
 
-### Bot Flow (bot.py)
-- **Manual Posting**: User sends message to Telegram bot → Bot shows confirmation → User confirms → Message posted to Twitter
-- **Manual Reddit Workflow**: Use `/scrape_now` from `/status` menu → System uses configured subreddits and settings → AI filters comments → Auto-posts to Twitter (when enabled)
-- **Automated Workflow**: Background scraper runs at configurable intervals → AI filters comments → Auto-posts to Twitter (when enabled)
-- **Duplicate Detection**: System checks last 7 days for duplicate content before posting
-- **Twitter API Diagnostics**: `/test_twitter` command provides comprehensive API status and permissions check
-- All posted content is saved to SQLite database with tweet_id and sent_at timestamp
-- AI Quality Filter: Sorts comments by score, takes top N (configurable), then uses Gemini 2.5 Flash-Lite Preview to assess quality with confidence score > 0.8, randomly selects 10 from qualified comments
+### Bot Flow (bot.py:1886 lines)
+- **Manual Posting**: User sends message → Bot confirmation → User confirms → Twitter post with database logging
+- **Manual Reddit Workflow**: `/scrape_now` command → Uses configured subreddits → AI filtering → Auto-posts best comments
+- **Automated Workflow**: Background timer-based scraper → AI quality assessment → Smart duplicate detection → Auto-posting
+- **Interactive Configuration**: `/settings` provides full GUI for runtime parameter adjustment
+- **Comprehensive Diagnostics**: `/test_twitter` with detailed API permissions and connection testing
+- **Twitter API Integration**: OAuth 1.0a with v1.1 media upload and v2 tweet creation
+- **Health Monitoring**: Built-in HTTP server for uptime monitoring and webhook handling
 
 ### Data Flow
-1. Reddit scraper fetches posts/comments using PRAW with 6 sorting methods (hot, new, top, controversial, rising, gilded)
-2. Data processor saves to SQLite database (`reddit_data.db`) with Twitter integration fields
-3. Comments are sorted by score, top N are selected (configurable via TOP_COMMENTS_COUNT)
-4. AI Quality Filter evaluates top N comments using Gemini API in batches
-5. Duplicate detection checks against last 7 days of posted content
-6. **Unified Mode**: Both manual `/scrape_now` and automated workflows use the same process
-7. **Auto-posting**: System automatically posts selected comments (no manual selection interface)
-8. Bot posts to Twitter via Tweepy with comprehensive error handling and saves tweet metadata
+1. **Concurrent Reddit Scraping**: AsyncRedditScraper fetches multiple subreddits simultaneously using asyncpraw
+2. **Intelligent Filtering**: Score-based pre-filtering → AI batch processing → Confidence-based selection
+3. **Smart Duplicate Detection**: 7-day content history check before posting to prevent repetition
+4. **Database Persistence**: All comments stored with AI assessment metadata and Twitter integration fields
+5. **Real-time Notifications**: Telegram notifications for all bot activities and errors
+6. **Performance Optimization**: Batch API calls, concurrent processing, semaphore-controlled rate limiting
 
 ### Database Schema
-- `reddit_comments`: Comments with Twitter integration fields (`tweet_id`, `sent_at`, `confidence`, `reason`, `api_call_count`)
-  - Primary table for storing posted comments with AI quality assessment metadata
-- `bot_config`: Configuration management table for automated scraper and bot settings
-  - Stores configurable parameters like sorting methods, intervals, and feature toggles
+- `reddit_comments`: Core table with fields (`comment_id`, `post_id`, `author`, `body`, `score`, `created_utc`, `parent_id`, `is_submitter`, `subreddit`, `tweet_id`, `sent_at`, `confidence`, `reason`, `api_call_count`)
+- `bot_config`: Runtime configuration table (`config_key`, `config_value`, `config_type`, `description`, `updated_at`)
 
 ## Key Commands
 
@@ -46,103 +42,133 @@ This is a Reddit-to-Twitter bot system that scrapes Reddit comments and posts th
 # Install dependencies
 pip install -r requirements.txt
 
-# Test configuration and connections (Note: test_bot.py not currently present)
-# Use the bot's built-in diagnostic commands instead
-
-# Run the main Telegram bot
+# Run the main Telegram bot (includes all functionality)
 python bot.py
 
-# Run standalone Reddit scraper
-python reddit_scraper.py
+# Direct database inspection (SQLite)
+sqlite3 reddit_data.db ".schema"
 ```
 
 ### Configuration
 **Environment Variables** (in `.env`):
-- Reddit API: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`, `REDDIT_USERNAME`, `REDDIT_PASSWORD`
-- Telegram: `TELEGRAM_BOT_TOKEN`, `AUTHORIZED_USER_ID`
-- Twitter: `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_TOKEN_SECRET` (OAuth 1.0a)
-- Gemini AI: `GEMINI_API_KEY` (for comment quality filtering)
-- Optional: `TWEET_INTERVAL` (seconds between posts), `APP_URL` (for keep-alive), `TWITTER_WEBHOOK_SECRET`
+- **Reddit API**: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`, `REDDIT_USERNAME`, `REDDIT_PASSWORD`
+- **Telegram**: `TELEGRAM_BOT_TOKEN`, `AUTHORIZED_USER_ID`  
+- **Twitter**: `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_TOKEN_SECRET`, `TWITTER_BEARER_TOKEN`
+- **AI Processing**: `GEMINI_API_KEY` (for intelligent comment quality assessment)
+- **Optional**: `TWEET_INTERVAL`, `APP_URL` (health monitoring), `TWITTER_WEBHOOK_SECRET`, `DATABASE_PATH`
 
-**Runtime Configuration** (via `/settings` command):
-- `GEMINI_BATCH_SIZE` - Batch size for AI API calls (default: 10)
-- `TOP_COMMENTS_COUNT` - Number of top comments to filter (default: 50)
+**Runtime Configuration** (via `/settings` Telegram GUI):
+- `GEMINI_BATCH_SIZE` - AI API batch processing size (default: 10, reduces API costs by 90%)
+- `TOP_COMMENTS_COUNT` - Top comments for AI filtering (default: 50)
 - `REDDIT_POST_FETCH_COUNT` - Posts per subreddit (default: 50)
-- `REDDIT_SORT_METHOD` - Sorting: hot, new, top, controversial, rising, gilded (default: hot)
-- `REDDIT_TIME_FILTER` - Time filter for top/controversial: all, year, month, week, day, hour (default: day)
-- `REDDIT_COMMENTS_PER_POST` - Comments per post limit (default: 20)
-- `REDDIT_FETCH_INTERVAL` - Auto-scraper interval in minutes (default: 60)
-- `REDDIT_SUBREDDITS` - Comma-separated subreddit list (default: python,programming,MachineLearning,artificial,technology)
-- `AUTO_SCRAPER_ENABLED` - Enable/disable automated scraping (default: false)
+- `REDDIT_SORT_METHOD` - 6 sorting options: hot, new, top, controversial, rising, gilded (default: hot)
+- `REDDIT_TIME_FILTER` - Time filters for top/controversial: all, year, month, week, day, hour (default: day)
+- `REDDIT_COMMENTS_PER_POST` - Comment extraction limit per post (default: 20)
+- `REDDIT_FETCH_INTERVAL` - Automated scraping interval in minutes (default: 60, minimum: 5)
+- `REDDIT_SUBREDDITS` - Target subreddit list (default: python,programming,MachineLearning,artificial,technology)
+- `AUTO_SCRAPER_ENABLED` - Automated scraping toggle (default: false)
 
 ## Dependencies
 
-Key external libraries:
-- `praw` - Python Reddit API Wrapper
-- `tweepy` - Twitter API client
-- `python-telegram-bot` - Telegram bot framework
-- `google-genai` - Google Gemini AI API client
-- `sqlite3` - Database operations (built-in)
-- `aiohttp` - Async HTTP for keep-alive and webhooks
+**Core Libraries** (requirements.txt):
+- `asyncpraw` - Async Python Reddit API Wrapper for concurrent scraping
+- `tweepy>=4.14.0` - Twitter API client with OAuth 1.0a and v2 support
+- `python-telegram-bot>=20.0` - Async Telegram bot framework
+- `google-genai>=0.3.0` - Google Gemini AI API client for quality assessment
+- `aiohttp>=3.8.0` - Async HTTP client for health monitoring and webhooks
+- `Pillow>=9.0.0` - Image processing for Twitter media uploads
+- `python-dotenv` - Environment variable management
+- **Built-in**: `sqlite3` (database), `asyncio` (concurrency), `logging` (monitoring)
 
-## Important Implementation Details
+## Implementation Architecture
 
-### Authentication Flow
-- Bot restricts access to single authorized Telegram user via `AUTHORIZED_USER_ID`
-- Twitter posting uses OAuth 1.0a + API v1.1 (fully compatible with X.com Free Tier)
-- Reddit can work with or without username/password authentication
-- Gemini AI requires API key for comment quality assessment
+### Authentication & Security
+- **Single-user access**: Bot restricted to `AUTHORIZED_USER_ID` only
+- **Twitter API**: OAuth 1.0a with v1.1 media uploads + v2 tweet creation (X.com Free Tier compatible)
+- **Reddit API**: Optional username/password auth, supports read-only access
+- **AI Processing**: Gemini API key required for quality assessment
+- **Webhook Security**: HMAC-SHA256 signature verification for Twitter webhooks
 
-### Error Handling
-- **Twitter API**: Comprehensive error categorization (duplicate content, permissions, rate limits) with specific user feedback
-- **Duplicate Detection**: Checks last 7 days before posting, skips duplicates with notification
-- **Reddit Scraping**: Errors are handled gracefully without crashing the bot
-- **Database Operations**: Silent failure mode with TODO notes for proper logging system
-- **Gemini AI**: Failures fallback to score-based sorting (avoids blocking the flow)
-- **Configuration**: Robust parsing with fallback to defaults for malformed settings
+### Advanced Error Handling
+- **Twitter API**: Categorized error responses (401/403/duplicate) with actionable user feedback
+- **Intelligent Fallback**: AI failures → score-based sorting, maintains service continuity
+- **Graceful Degradation**: Reddit scraping errors don't crash bot, continue with available data
+- **Smart Retry Logic**: Automatic retry for transient failures, exponential backoff
+- **Comprehensive Logging**: All operations logged with structured error context
 
-### Rate Limiting
-- Twitter posts have configurable interval (`TWEET_INTERVAL`)
-- Reddit scraping includes 1-second delays between requests
-- Twitter client uses `wait_on_rate_limit=True`
-- Gemini AI calls use batch processing (configurable via GEMINI_BATCH_SIZE) to reduce API calls by 90%
+### Performance Optimizations
+- **Concurrent Processing**: Async Reddit scraping with semaphore-controlled rate limiting
+- **Batch AI Processing**: Configurable batch sizes reduce Gemini API calls by 90%
+- **Smart Caching**: 7-day duplicate detection with optimized database queries
+- **Resource Management**: Automatic connection pooling and cleanup
+- **Health Monitoring**: Built-in HTTP server for uptime monitoring (port 8000)
 
-### Media Processing
-- Images are automatically resized and optimized for Twitter
-- Comments over 280 characters are truncated with "..."
-- Image posts support both image and caption text
-- AI quality filtering ensures only meaningful comments are selected
+### Content Processing Pipeline
+1. **Multi-subreddit Scraping**: Concurrent fetching from configured subreddits
+2. **Score-based Pre-filtering**: Extract top N comments by Reddit score
+3. **AI Quality Assessment**: Batch processing with confidence scoring (>0.8 threshold)
+4. **Duplicate Prevention**: 7-day content history check with exact matching
+5. **Smart Posting**: Automatic content truncation and Twitter optimization
 
-## Testing
+## Testing & Diagnostics
 
-**Built-in Diagnostics:**
-- `/test_twitter` - Comprehensive Twitter API testing with permission checks
-- `/status` - Bot status, configuration summary, and database statistics
-- `/settings` - Runtime configuration management and validation
+**Built-in Diagnostic Commands:**
+- `/test_twitter` - Comprehensive Twitter API connection, permissions, and OAuth testing
+- `/status` - Real-time bot status, scraper status, configuration summary, database statistics
+- `/settings` - Interactive GUI for runtime configuration with validation
+- `/scrape_now` - Manual trigger for complete scraping workflow testing
 
-**Manual Testing:**
-- Start bot with `python bot.py`
-- Use `/scrape_now` from `/status` menu to test scraping and AI filtering
-- Configure subreddits and parameters via `/settings`
-- Verify database operations through posted content tracking
+**Manual Testing Workflow:**
+```bash
+# 1. Start the bot
+python bot.py
+
+# 2. Test Twitter integration
+# Use /test_twitter command in Telegram
+
+# 3. Test Reddit scraping and AI filtering
+# Use /scrape_now command to trigger manual scrape
+
+# 4. Configure system parameters
+# Use /settings for interactive configuration
+
+# 5. Monitor automated operations
+# Use /status to check scraper timing and performance
+```
+
+**Database Inspection:**
+```bash
+# View database schema
+sqlite3 reddit_data.db ".schema"
+
+# Check recent comments
+sqlite3 reddit_data.db "SELECT * FROM reddit_comments ORDER BY scraped_at DESC LIMIT 10;"
+
+# View configuration
+sqlite3 reddit_data.db "SELECT * FROM bot_config;"
+```
 
 ## File Structure
 
-**Core Files:**
-- `bot.py` - Main Telegram bot with Twitter integration, AI quality filtering, and automated workflows (82KB)
-- `reddit_scraper.py` - Reddit scraping with 6 sorting methods and time filters (6.4KB)
-- `data_processor.py` - Database operations for comment storage with Twitter metadata (3.6KB)
-- `config_manager.py` - Runtime configuration management with SQLite backend (7.3KB)
-- `config.py` - Environment variable loading (1KB)
-- `requirements.txt` - Cleaned Python dependencies (108 bytes)
+**Core Application Files:**
+- `bot.py` (1,886 lines) - Complete Telegram bot with Twitter integration, async Reddit scraping coordination, AI filtering, automated workflows, interactive configuration GUI, health monitoring, and webhook handling
+- `reddit_scraper.py` (296 lines) - Async Reddit scraper with concurrent subreddit processing, 6 sorting methods, semaphore-controlled rate limiting, and backward compatibility
+- `config_manager.py` (194 lines) - SQLite-based configuration management with type validation, default value handling, and runtime parameter updates
+- `data_processor.py` (90 lines) - Database operations for comment storage with Twitter metadata, AI assessment data, and automatic schema updates
+- `config.py` (34 lines) - Environment variable loading and configuration constants
 
-**Data & Documentation:**
-- `reddit_data.db` - SQLite database with comments and configuration tables (897KB)
-- `CLAUDE.md` - Project documentation and user guide (9.2KB)
-- `Oracle Cloud Always Free 服务的完整列表.txt` - Reference documentation (2.8KB)
-- `.env` - Environment configuration (not in repo)
+**Dependencies & Data:**
+- `requirements.txt` (7 lines) - Async-focused Python dependencies with version constraints
+- `reddit_data.db` - SQLite database with `reddit_comments` and `bot_config` tables
+- `CLAUDE.md` - Comprehensive project documentation with architecture details
+- `.env` - Environment configuration (not in repository)
+- `venv/` - Python virtual environment directory
 
-**Note:** Project has been optimized and cleaned - removed debug print statements, Python cache files, and unused code. Total size: ~1MB excluding virtual environment.
+**Architecture Notes:**
+- **Async-first design**: All I/O operations use asyncio for optimal performance
+- **Modular structure**: Clear separation of concerns between bot logic, scraping, data processing, and configuration
+- **No external dependencies**: Uses SQLite for persistence, built-in HTTP server for monitoring
+- **Production-ready**: Comprehensive error handling, logging, health monitoring, and graceful shutdown
 
 # User Guide
 
@@ -150,135 +176,167 @@ Key external libraries:
 
 ### 1. Environment Configuration
 
-Ensure your `.env` file contains the following configuration:
+Create a `.env` file with the following configuration:
 
 ```env
-# Reddit API
-REDDIT_CLIENT_ID=your_client_id_here
-REDDIT_CLIENT_SECRET=your_client_secret_here
-REDDIT_USER_AGENT=YourApp/1.0
-REDDIT_USERNAME=your_username_here
-REDDIT_PASSWORD=your_password_here
+# Reddit API (required)
+REDDIT_CLIENT_ID=your_reddit_client_id
+REDDIT_CLIENT_SECRET=your_reddit_client_secret  
+REDDIT_USER_AGENT=RedditBot/1.0
+REDDIT_USERNAME=your_reddit_username  # Optional for read-only access
+REDDIT_PASSWORD=your_reddit_password  # Optional for read-only access
 
-# Telegram Bot
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
-AUTHORIZED_USER_ID=your_telegram_user_id_here
+# Telegram Bot (required)
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+AUTHORIZED_USER_ID=your_telegram_user_id
 
-# Twitter API
-TWITTER_API_KEY=your_twitter_api_key_here
-TWITTER_API_SECRET=your_twitter_api_secret_here
-TWITTER_ACCESS_TOKEN=your_twitter_access_token_here
-TWITTER_ACCESS_TOKEN_SECRET=your_twitter_access_token_secret_here
-# Twitter Bearer Token not required for OAuth 1.0a (Free Tier compatible)
+# Twitter API (required for posting)
+TWITTER_API_KEY=your_twitter_api_key
+TWITTER_API_SECRET=your_twitter_api_secret
+TWITTER_ACCESS_TOKEN=your_twitter_access_token
+TWITTER_ACCESS_TOKEN_SECRET=your_twitter_access_token_secret
+TWITTER_BEARER_TOKEN=your_twitter_bearer_token
 
-# Gemini AI API (for comment quality filtering)
-GEMINI_API_KEY=your_gemini_api_key_here
+# AI Quality Assessment (recommended)
+GEMINI_API_KEY=your_google_gemini_api_key
 
-# Optional configuration
-TWEET_INTERVAL=60  # Tweet sending interval (seconds)
+# Optional Configuration
+TWEET_INTERVAL=60              # Seconds between posts
+APP_URL=https://your-app.com   # For health monitoring
+DATABASE_PATH=reddit_data.db   # Database file path
 ```
 
-### 2. Bot Usage
+### 2. Installation & Startup
 
-**Commands:**
-- `/start` - Start using the bot
-- `/help` - Display help information
-- `/status` - Check bot status with detailed scraping information and immediate scrape option
-- `/scrape_now` - Trigger immediate Reddit scraping (from status menu)
-- `/settings` - Configure automated scraper and bot parameters
-- `/test_twitter` - Comprehensive Twitter API diagnostics and permissions check
-- `/scrape_now` - Trigger immediate Reddit scraping (from status menu)
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-**Manual Reddit Scraping Workflow (via `/scrape_now`):**
-1. **Uses configured subreddits**: From REDDIT_SUBREDDITS setting (no manual input needed)
-2. **Uses configured settings**: POST_FETCH_COUNT, SORT_METHOD, TIME_FILTER, COMMENTS_PER_POST
-3. **Score-based filtering**: Sorts all comments by score, takes top N (configurable via TOP_COMMENTS_COUNT)
-4. **AI quality filtering**: 🤖 Evaluates top N comments, keeps those with confidence > 0.8
-5. **Duplicate detection**: Checks against last 7 days of posted content
-6. **Random selection**: Randomly selects up to 10 non-duplicate, qualified comments
-7. **Auto-posting**: Automatically posts selected comments to Twitter (when enabled)
-8. **No manual selection**: Fully automated process using configured parameters
+# Start the bot
+python bot.py
+```
 
-**Automated Scraping Workflow:**
-1. **Background timer**: Runs at configured interval (default: 60 minutes, with initial delay)
-2. **Uses configured subreddits**: From REDDIT_SUBREDDITS setting
-3. **Applies sorting method**: Configurable via REDDIT_SORT_METHOD (6 options available)
-4. **AI filtering and duplicate detection**: Same as manual workflow
-5. **Auto-posting**: Automatically posts selected comments when AUTO_SCRAPER_ENABLED is true
+### 3. Bot Commands & Usage
 
-**Tweet Posting:**
-- Send text/image messages → Bot shows confirmation → Confirm → Posted to Twitter
-- Comments over 280 characters are automatically truncated
-- All posted content is saved to database with tweet_id and timestamp
+**Primary Commands:**
+- `/start` - Initialize bot and show welcome message
+- `/help` - Display comprehensive help information  
+- `/status` - Real-time bot status, scraper status, and performance metrics
+- `/settings` - Interactive GUI for configuration management
+- `/test_twitter` - Comprehensive Twitter API diagnostics
+- `/scrape_now` - Manual trigger for immediate Reddit scraping and posting
+
+**Manual Tweet Posting:**
+1. Send text message to bot → Confirmation prompt → Confirm → Posted to Twitter
+2. Send image with caption → Confirmation prompt → Confirm → Posted with media
+3. Automatic character limit handling (280 chars) and image optimization
+
+**Automated Reddit-to-Twitter Workflow:**
+1. **Configuration**: Use `/settings` to configure subreddits, intervals, and AI parameters
+2. **Activation**: Use `/start_scraper` or enable via `/settings` → `AUTO_SCRAPER_ENABLED`
+3. **Processing Pipeline**: 
+   - Concurrent scraping from configured subreddits
+   - Score-based pre-filtering (top N comments)
+   - AI quality assessment (confidence > 0.8)
+   - Duplicate detection (7-day history)
+   - Smart selection and auto-posting
+4. **Monitoring**: Use `/status` to track progress and performance
 
 ## Advanced Configuration
 
-### AI Quality Filtering
-**Environment Variables:**
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-```
+### AI Quality Assessment System
+**Intelligent Content Filtering:**
+- **Gemini 2.5 Flash-Lite Preview**: Advanced language model for content quality evaluation
+- **Batch Processing**: Process up to 10 comments per API call (90% cost reduction vs individual calls)
+- **Confidence Scoring**: Only posts comments with AI confidence > 0.8
+- **Fallback Strategy**: Graceful degradation to score-based sorting if AI unavailable
 
-**Runtime Configuration (via /settings):**
-- `GEMINI_BATCH_SIZE=10` - Batch size for API calls (default: 10)
-- `TOP_COMMENTS_COUNT=50` - Number of top comments to filter (default: 50)
+**Configuration Parameters:**
+- `GEMINI_BATCH_SIZE` (default: 10) - Comments per API batch call
+- `TOP_COMMENTS_COUNT` (default: 50) - High-score comments sent for AI assessment
+- AI assessment criteria: completeness, information value, standalone readability
 
-**Notes:**
-- If GEMINI_API_KEY is not set, bot will skip AI filtering and show top 10 comments sorted by score
-- **Configurable filtering scope**: TOP_COMMENTS_COUNT controls how many top-scored comments to send for AI filtering
-- AI filtering evaluates the top N comments by score, keeping those with confidence > 0.8
-- **Batch processing**: GEMINI_BATCH_SIZE controls how many comments are processed per API call (reduces costs by 90%)
-- **API call tracking**: Bot displays total number of Gemini API calls used during filtering
-- Optimized token usage: only processes N highest-scored comments instead of all comments
-- Filtering process adds processing time but significantly improves tweet quality
+### Reddit Data Acquisition
+**Supported Sorting Methods** (via `/settings`):
+- `hot` - Trending posts with engagement momentum (default)
+- `new` - Most recently posted content
+- `top` - Highest scored posts with time filter support
+- `controversial` - High engagement with mixed reactions
+- `rising` - Posts gaining rapid traction
+- `gilded` - Award-recipient posts
 
-### Security
-- Only `AUTHORIZED_USER_ID` specified user can use the bot
-- All API keys must be kept secure and not committed to version control
-- Follow platform usage terms and avoid sending sensitive content
+**Time Filter Options** (top/controversial only):
+- `all`, `year`, `month`, `week`, `day` (default), `hour`
 
-### Reddit Sorting Methods
-The bot supports all 6 PRAW sorting methods (configurable via `/settings`):
-- `hot` - Currently trending posts (default)
-- `new` - Most recently posted
-- `top` - Highest scored posts (supports time filters)
-- `controversial` - Most controversial posts (supports time filters) 
-- `rising` - Posts gaining traction
-- `gilded` - Posts with Reddit awards
+**Performance Parameters:**
+- `REDDIT_POST_FETCH_COUNT` (default: 50) - Posts per subreddit
+- `REDDIT_COMMENTS_PER_POST` (default: 20) - Comment extraction limit
+- `REDDIT_FETCH_INTERVAL` (default: 60, min: 5) - Automated scraping interval
+- `REDDIT_SUBREDDITS` - Target communities (comma-separated)
 
-**Time Filters** (for top/controversial only):
-- `all` - All time
-- `year` - Past year
-- `month` - Past month  
-- `week` - Past week
-- `day` - Past day (default)
-- `hour` - Past hour
+### Security & Access Control
+- **Single-user authorization**: Restricted to `AUTHORIZED_USER_ID` only
+- **API key protection**: All credentials stored in environment variables
+- **Webhook security**: HMAC-SHA256 signature verification for Twitter webhooks
+- **Rate limiting**: Built-in throttling and `wait_on_rate_limit` for all APIs
+- **Content sanitization**: Automatic character limit handling and content cleaning
 
-## Troubleshooting
+## Troubleshooting Guide
 
-**Q: Bot not responding?**
-A: Check bot token and ensure bot is running. Use `/status` to verify bot state.
+### Common Issues & Solutions
 
-**Q: Tweet posting fails?**
-A: Use `/test_twitter` for comprehensive API diagnostics. Check permissions and rate limits.
+**🔴 Bot Not Responding**
+- Verify `TELEGRAM_BOT_TOKEN` and bot is running (`python bot.py`)
+- Check authorized user ID matches your Telegram user ID
+- Use `/status` to verify bot connection and health
 
-**Q: Getting "update config failed" in settings?**
-A: This was a known bug with underscore-containing config keys, now fixed.
+**🐦 Twitter API Issues**
+- Use `/test_twitter` for comprehensive diagnostics and permission analysis
+- Ensure all 5 Twitter API credentials are configured (including `TWITTER_BEARER_TOKEN`)
+- Verify OAuth 1.0a permissions: "Read and Write" access required
+- Check rate limits and API tier access in Twitter Developer Portal
 
-**Q: All scraped content shows as duplicates?**
-A: Bot checks last 7 days for duplicates. Try different subreddits or longer time ranges.
+**⚙️ Configuration Problems**
+- Configuration validation is built-in - invalid values will show specific error messages
+- Use `/settings` GUI instead of manual database editing
+- Minimum values enforced: `REDDIT_FETCH_INTERVAL >= 5 minutes`
+- Boolean values accept: `true/false`, `1/0`, `yes/no`, `on/off`
 
-**Q: Auto-scraper not working?**
-A: Check AUTO_SCRAPER_ENABLED setting and REDDIT_FETCH_INTERVAL. Auto-scraper waits for one interval before first run.
+**🔄 Automated Scraper Issues**
+- Verify `AUTO_SCRAPER_ENABLED = true` via `/settings`
+- Check `/status` for next scheduled run time and current status
+- First run occurs after one full interval (default: 60 minutes)
+- Review logs for specific error messages during scraping
 
-**Q: AI filtering finds no quality comments?**
-A: Try longer time ranges or more active subreddits. Adjust TOP_COMMENTS_COUNT and sorting method.
+**🤖 AI Filtering Issues**
+- No `GEMINI_API_KEY`: System falls back to score-based sorting automatically
+- No qualifying comments: Adjust `TOP_COMMENTS_COUNT` or try different subreddits/time ranges
+- High API costs: Reduce `GEMINI_BATCH_SIZE` or `TOP_COMMENTS_COUNT`
+- Check AI assessment criteria: standalone readability, information value, completeness
 
-**Q: Can I disable AI filtering?**
-A: Yes, don't set GEMINI_API_KEY to use score-based sorting only.
+**📄 Content Duplication**
+- System checks last 7 days automatically to prevent duplicate posts
+- Try different subreddits, sorting methods, or time filters for fresh content
+- Use `/scrape_now` to test with current configuration
 
-**Q: How do I change Reddit sorting method?**
-A: Use `/settings` → REDDIT_SORT_METHOD to choose from 6 options (hot, new, top, controversial, rising, gilded).
+**🔐 Permission Errors**
+- Twitter: Ensure app has "Read and Write" permissions (not just "Read")
+- Reddit: Username/password optional for read-only access
+- Telegram: Bot must be able to send messages to authorized user
 
-**Q: Twitter permission errors?**
-A: Ensure API v1.1 and v2 access. Use `/test_twitter` to check specific permission issues.
+### Performance Optimization
+
+**Memory Usage:**
+- SQLite database auto-manages connections and cleanup
+- Async operations prevent blocking during I/O operations
+- Connection pooling built into asyncpraw and aiohttp clients
+
+**API Rate Limits:**
+- All APIs configured with `wait_on_rate_limit=True`
+- Semaphore-controlled concurrent processing (5 subreddits, 10 posts simultaneously)
+- Batch AI processing reduces Gemini API calls by 90%
+
+**Monitoring:**
+- Health endpoint available at `http://localhost:8000/health`
+- Comprehensive logging to console with structured error information
+- Real-time status via `/status` command with performance metrics
