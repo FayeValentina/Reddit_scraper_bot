@@ -1,0 +1,63 @@
+以下是 Oracle Cloud Always Free 服务的完整列表，适用于所有 Oracle Cloud Free Tier 用户，无论是试用期用户还是已升级至付费账户的用户。这些服务在配额范围内永久免费，适合开发、测试、学习和小规模生产环境使用。
+
+
+☁️ 核心计算与存储服务
+AMD Compute VM：最多 2 个虚拟机实例，适用于通用计算任务。
+
+Arm Ampere A1 Compute：最多 4 个实例，每月提供 3,000 OCPU 小时和 18,000 GB 小时的内存。
+
+Block Volume Storage：最多 2 个块存储卷，总容量 200 GB，以及最多 5 个卷备份。
+
+Object Storage：最多 20 GB 的标准、低频访问和归档存储总和，以及每月最多 50,000 次 API 请求。
+
+Archive Storage：包含在上述 20 GB 配额内。
+
+Outbound Data Transfer：每月最多 10 TB 的出站数据传输。
+
+🗄️ 数据库与开发平台
+Autonomous Database：最多 2 个实例，每个实例提供 20 GB 存储，支持事务处理、数据仓库、JSON 数据库和 APEX 应用开发。
+
+HeatWave：在主区域提供一个 HeatWave 数据库系统，包含 50 GB 存储和 50 GB 备份存储。
+
+NoSQL Database：仅限凤凰城区域，每月最多 1.33 亿次读取和写入操作，以及最多 3 个表，每个表 25 GB 存储。
+
+APEX Application Development：提供 APEX 开发环境，支持低代码应用开发。
+
+🛠️ 网络与安全服务
+Virtual Cloud Network (VCN)：最多 2 个虚拟云网络（VCN），包括 IPv4 和 IPv6 支持。
+
+Load Balancer：最多 1 个负载均衡器实例，带宽 10 Mbps。
+
+Flexible Load Balancer：最多 1 个实例。
+
+Flexible Network Load Balancer：最多 1 个实例。
+
+Site-to-Site VPN：最多 1 个站点到站点 VPN 连接。
+
+Outbound Data Transfer：每月最多 10 TB 的出站数据传输。
+
+Service Connector Hub：最多 2 个服务连接器。
+
+VCN Flow Logs：每月最多 10 GB 的流日志数据。
+
+Bastions：最多 5 个 Bastion 实例。
+
+Certificates：最多 5 个私有证书颁发机构（CA）和 150 个私有 TLS 证书。
+
+Vault：最多 20 个 HSM 保护的主加密密钥版本和 150 个机密。
+
+📊 监控与管理服务
+Monitoring：每月最多 5 亿个数据点的指标摄取和 10 亿个数据点的检索。
+
+Notifications：每月最多 100 万次 HTTPS 消息和 1,000 次电子邮件通知。
+
+Logging：每月最多 10 GB 的日志数据。
+
+Application Performance Monitoring：每小时最多 1,000 次追踪事件和 10 次合成监控运行。
+
+Email Delivery：每天最多发送 100 封电子邮件。
+
+🧰 开发与自动化工具
+Resource Manager (Terraform)：最多 100 个堆栈、100 个配置源提供者和 100 个模板。
+
+Content Management Starter Edition：用于内容管理的入门版服务。
