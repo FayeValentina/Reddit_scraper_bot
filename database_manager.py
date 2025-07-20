@@ -2,9 +2,9 @@ import sqlite3
 import asyncio
 import threading
 import logging
+import os
 from contextlib import contextmanager
 from typing import Optional
-import config
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +22,12 @@ class DatabaseManager:
                     cls._instance._initialized = False
         return cls._instance
     
-    def __init__(self):
+    def __init__(self, db_path: str = None):
         if self._initialized:
             return
         
-        self.db_path = config.DATABASE_PATH
+        # 使用环境变量或默认路径，避免导入config模块
+        self.db_path = db_path or os.getenv('DATABASE_PATH', 'reddit_data.db')
         self._local = threading.local()
         self._initialized = True
         logger.info(f"数据库管理器初始化，数据库路径: {self.db_path}")

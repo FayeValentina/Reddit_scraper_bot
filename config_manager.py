@@ -3,14 +3,14 @@ import json
 import os
 import logging
 from datetime import datetime
-import config
 from database_manager import db_manager
 
 logger = logging.getLogger(__name__)
 
 class ConfigManager:
     def __init__(self):
-        self.db_path = config.DATABASE_PATH
+        # 使用环境变量获取数据库路径，避免导入config
+        self.db_path = os.getenv('DATABASE_PATH', 'reddit_data.db')
         # 创建数据目录
         os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else '.', exist_ok=True)
         self._init_config_table()

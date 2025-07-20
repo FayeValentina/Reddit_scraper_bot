@@ -1,6 +1,6 @@
 import asyncpraw
+import os
 from datetime import datetime
-import config
 import asyncio
 import logging
 
@@ -16,19 +16,26 @@ class AsyncRedditScraper:
         if self.reddit is None:
             async with self._session_lock:
                 if self.reddit is None:
-                    if config.USERNAME and config.PASSWORD:
+                    # 直接从环境变量获取配置，避免导入config
+                    username = os.getenv('REDDIT_USERNAME')
+                    password = os.getenv('REDDIT_PASSWORD')
+                    client_id = os.getenv('REDDIT_CLIENT_ID')
+                    client_secret = os.getenv('REDDIT_CLIENT_SECRET')
+                    user_agent = os.getenv('REDDIT_USER_AGENT', 'RedditScraper/1.0')
+                    
+                    if username and password:
                         self.reddit = asyncpraw.Reddit(
-                            client_id=config.CLIENT_ID,
-                            client_secret=config.CLIENT_SECRET,
-                            user_agent=config.USER_AGENT,
-                            username=config.USERNAME,
-                            password=config.PASSWORD
+                            client_id=client_id,
+                            client_secret=client_secret,
+                            user_agent=user_agent,
+                            username=username,
+                            password=password
                         )
                     else:
                         self.reddit = asyncpraw.Reddit(
-                            client_id=config.CLIENT_ID,
-                            client_secret=config.CLIENT_SECRET,
-                            user_agent=config.USER_AGENT
+                            client_id=client_id,
+                            client_secret=client_secret,
+                            user_agent=user_agent
                         )
         return self.reddit
     

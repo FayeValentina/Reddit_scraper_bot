@@ -3,7 +3,6 @@ import asyncio
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, List
-import config
 from database_manager import db_manager
 
 logger = logging.getLogger(__name__)

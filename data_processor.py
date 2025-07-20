@@ -1,7 +1,6 @@
 import sqlite3
-import config
-from datetime import datetime
 import os
+from datetime import datetime
 import logging
 from database_manager import db_manager
 
@@ -9,7 +8,8 @@ logger = logging.getLogger(__name__)
 
 class DataProcessor:
     def __init__(self):
-        self.db_path = config.DATABASE_PATH
+        # 使用环境变量获取数据库路径，避免导入config
+        self.db_path = os.getenv('DATABASE_PATH', 'reddit_data.db')
         # 创建数据目录
         os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else '.', exist_ok=True)
     

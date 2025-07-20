@@ -14,6 +14,7 @@ from twitter_manager import TwitterManager
 from ai_evaluator import AIEvaluator
 from health_monitor import HealthMonitor
 from auto_scraper_manager import AutoScraperManager
+from database_manager import db_manager
 
 load_dotenv()
 
@@ -955,6 +956,14 @@ class TwitterBot:
         except Exception as e:
             logger.error(f"发送Telegram消息失败: {e}")
     
+    def _close_database_connections(self):
+        """关闭数据库连接"""
+        try:
+            db_manager.close_all_connections()
+            logger.info("数据库连接已关闭")
+        except Exception as e:
+            logger.error(f"关闭数据库连接时出错: {e}")
+    
     # ===== 主运行函数 =====
     
     async def run(self):
@@ -1027,8 +1036,7 @@ class TwitterBot:
             await self.health_monitor.stop_server()
             
             # 关闭数据库连接
-            from database_manager import db_manager
-            db_manager.close_all_connections()
+            self._close_database_connections()
             
             # 关闭Telegram bot
             await application.updater.stop()
