@@ -52,10 +52,19 @@ class TwitterBot:
         # 用户状态管理
         self.user_states = {}
         self.pending_tweets = {}
+        
+        # Telegram Application实例（单例）
+        self._application = None
     
     def is_authorized_user(self, user_id: int) -> bool:
         """检查用户是否有权限"""
         return str(user_id) == self.authorized_user_id
+    
+    def _get_application(self):
+        """获取Telegram Application实例（单例模式）"""
+        if self._application is None:
+            self._application = Application.builder().token(self.telegram_token).build()
+        return self._application
     
     # ===== Telegram Bot 命令处理器 =====
     
@@ -550,8 +559,8 @@ class TwitterBot:
             
             reply_markup = InlineKeyboardMarkup(keyboard)
             
+            application = self._get_application()
             if edit and message_id:
-                application = Application.builder().token(self.telegram_token).build()
                 await application.bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=message_id,
@@ -560,7 +569,6 @@ class TwitterBot:
                     reply_markup=reply_markup
                 )
             else:
-                application = Application.builder().token(self.telegram_token).build()
                 await application.bot.send_message(
                     chat_id=chat_id,
                     text=settings_message,
@@ -570,7 +578,7 @@ class TwitterBot:
             
         except Exception as e:
             logger.error(f"显示设置菜单时出错: {e}")
-            application = Application.builder().token(self.telegram_token).build()
+            application = self._get_application()
             await application.bot.send_message(chat_id=chat_id, text="❌ 显示设置菜单失败")
     
     # ===== 消息处理 =====
@@ -635,7 +643,7 @@ class TwitterBot:
                 """.strip()
                 
                 # 编辑原消息显示成功
-                application = Application.builder().token(self.telegram_token).build()
+                application = self._get_application()
                 await application.bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=message_id,
@@ -914,7 +922,7 @@ class TwitterBot:
     async def send_startup_notification(self):
         """发送启动通知给授权用户"""
         try:
-            application = Application.builder().token(self.telegram_token).build()
+            application = self._get_application()
             startup_message = f"""
 🤖 <b>Twitter Bot 已启动</b>
 
@@ -938,7 +946,7 @@ class TwitterBot:
     async def send_telegram_message(self, message: str):
         """发送消息到Telegram"""
         try:
-            application = Application.builder().token(self.telegram_token).build()
+            application = self._get_application()
             await application.bot.send_message(
                 chat_id=self.authorized_user_id,
                 text=message,
@@ -952,7 +960,7 @@ class TwitterBot:
     async def run(self):
         """启动机器人"""
         # 设置Telegram bot
-        application = Application.builder().token(self.telegram_token).build()
+        application = self._get_application()
         
         # 添加命令处理器
         application.add_handler(CommandHandler("start", self.start))
@@ -1017,6 +1025,10 @@ class TwitterBot:
             # 关闭各组件
             await self.reddit_scraper.close()
             await self.health_monitor.stop_server()
+            
+            # 关闭数据库连接
+            from database_manager import db_manager
+            db_manager.close_all_connections()
             
             # 关闭Telegram bot
             await application.updater.stop()

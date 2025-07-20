@@ -1,8 +1,12 @@
 import sqlite3
 import json
 import os
+import logging
 from datetime import datetime
 import config
+from database_manager import db_manager
+
+logger = logging.getLogger(__name__)
 
 class ConfigManager:
     def __init__(self):
@@ -15,24 +19,21 @@ class ConfigManager:
     def _init_config_table(self):
         """初始化配置表"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS bot_config (
-                    config_key TEXT PRIMARY KEY,
-                    config_value TEXT NOT NULL,
-                    config_type TEXT NOT NULL DEFAULT 'str',
-                    description TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            conn.commit()
-            conn.close()
+            with db_manager.get_transaction() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS bot_config (
+                        config_key TEXT PRIMARY KEY,
+                        config_value TEXT NOT NULL,
+                        config_type TEXT NOT NULL DEFAULT 'str',
+                        description TEXT,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
         except Exception as e:
-            # TODO: Add proper logging system
-            pass  # Silent fail for initialization
+            logger.error(f"初始化配置表失败: {e}")
+            pass  # Allow initialization to continue
     
     def _set_default_configs(self):
         """设置默认配置值"""
@@ -91,63 +92,52 @@ class ConfigManager:
     def get_config(self, key, default=None):
         """获取配置值"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('SELECT config_value, config_type FROM bot_config WHERE config_key = ?', (key,))
-            result = cursor.fetchone()
-            conn.close()
-            
-            if result:
-                value, config_type = result
-                return self._convert_value(value, config_type)
-            return default
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT config_value, config_type FROM bot_config WHERE config_key = ?', (key,))
+                result = cursor.fetchone()
+                
+                if result:
+                    value, config_type = result
+                    return self._convert_value(value, config_type)
+                return default
         except Exception as e:
-            # TODO: Add proper logging system
-            pass  # Silent fail for config retrieval
+            logger.error(f"获取配置 {key} 失败: {e}")
             return default
     
     def set_config(self, key, value, config_type='str', description=''):
         """设置配置值"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT OR REPLACE INTO bot_config 
-                (config_key, config_value, config_type, description, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (key, str(value), config_type, description, datetime.now()))
-            
-            conn.commit()
-            conn.close()
+            with db_manager.get_transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO bot_config 
+                    (config_key, config_value, config_type, description, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (key, str(value), config_type, description, datetime.now()))
             return True
         except Exception as e:
-            # TODO: Add proper logging system
-            pass  # Silent fail for config setting
+            logger.error(f"设置配置 {key} 失败: {e}")
             return False
     
     def get_all_configs(self):
         """获取所有配置"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('SELECT config_key, config_value, config_type, description FROM bot_config ORDER BY config_key')
-            results = cursor.fetchall()
-            conn.close()
-            
-            configs = {}
-            for key, value, config_type, description in results:
-                configs[key] = {
-                    'value': self._convert_value(value, config_type),
-                    'type': config_type,
-                    'description': description
-                }
-            return configs
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT config_key, config_value, config_type, description FROM bot_config ORDER BY config_key')
+                results = cursor.fetchall()
+                
+                configs = {}
+                for key, value, config_type, description in results:
+                    configs[key] = {
+                        'value': self._convert_value(value, config_type),
+                        'type': config_type,
+                        'description': description
+                    }
+                return configs
         except Exception as e:
-            # TODO: Add proper logging system
-            pass  # Silent fail for retrieving all configs
+            logger.error(f"获取所有配置失败: {e}")
             return {}
     
     def _convert_value(self, value, config_type):
@@ -168,27 +158,22 @@ class ConfigManager:
     def update_config(self, key, new_value):
         """更新现有配置的值"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('SELECT config_type FROM bot_config WHERE config_key = ?', (key,))
-            result = cursor.fetchone()
-            
-            if result:
-                config_type = result[0]
-                cursor.execute('''
-                    UPDATE bot_config 
-                    SET config_value = ?, updated_at = ?
-                    WHERE config_key = ?
-                ''', (str(new_value), datetime.now(), key))
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT config_type FROM bot_config WHERE config_key = ?', (key,))
+                result = cursor.fetchone()
                 
-                conn.commit()
-                conn.close()
-                return True
-            else:
-                conn.close()
-                return False
+                if result:
+                    with db_manager.get_transaction() as trans_conn:
+                        trans_cursor = trans_conn.cursor()
+                        trans_cursor.execute('''
+                            UPDATE bot_config 
+                            SET config_value = ?, updated_at = ?
+                            WHERE config_key = ?
+                        ''', (str(new_value), datetime.now(), key))
+                    return True
+                else:
+                    return False
         except Exception as e:
-            # TODO: Add proper logging system
-            pass  # Silent fail for config update
+            logger.error(f"更新配置 {key} 失败: {e}")
             return False

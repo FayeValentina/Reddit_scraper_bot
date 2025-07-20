@@ -3,6 +3,8 @@ import asyncio
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, List
+import config
+from database_manager import db_manager
 
 logger = logging.getLogger(__name__)
 
@@ -192,21 +194,19 @@ class AutoScraperManager:
     async def _check_duplicate_content(self, content):
         """检查内容是否已经发布过"""
         try:
-            conn = sqlite3.connect('reddit_data.db')
-            cursor = conn.cursor()
-            
-            # 查询最近7天内是否有相同内容
-            seven_days_ago = datetime.now() - timedelta(days=7)
-            cursor.execute("""
-                SELECT COUNT(*) FROM reddit_comments 
-                WHERE body = ? AND sent_at > ? AND tweet_id IS NOT NULL
-            """, (content, seven_days_ago.strftime('%Y-%m-%d %H:%M:%S')))
-            
-            count = cursor.fetchone()[0]
-            conn.close()
-            
-            return count > 0
-            
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # 查询最近7天内是否有相同内容
+                seven_days_ago = datetime.now() - timedelta(days=7)
+                cursor.execute("""
+                    SELECT COUNT(*) FROM reddit_comments 
+                    WHERE body = ? AND sent_at > ? AND tweet_id IS NOT NULL
+                """, (content, seven_days_ago.strftime('%Y-%m-%d %H:%M:%S')))
+                
+                count = cursor.fetchone()[0]
+                return count > 0
+                
         except Exception as e:
             logger.error(f"检查重复内容时出错: {e}")
             return False

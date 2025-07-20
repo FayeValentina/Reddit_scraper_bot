@@ -28,7 +28,4 @@ APP_URL = os.getenv('APP_URL')
 # Twitter Webhook Secret
 TWITTER_WEBHOOK_SECRET = os.getenv('TWITTER_WEBHOOK_SECRET')
 
-# Bot Configuration
-TWEET_INTERVAL = int(os.getenv('TWEET_INTERVAL', '60'))
-
 DATABASE_PATH = os.getenv('DATABASE_PATH', 'reddit_data.db')
