@@ -35,6 +35,8 @@ class TwitterBot:
         
         # 初始化各个组件
         self.data_processor = DataProcessor()
+        # 确保数据库表在启动时就存在
+        self.data_processor._ensure_table_exists()
         self.config_manager = ConfigManager()
         self.reddit_scraper = AsyncRedditScraper()
         self.twitter_manager = TwitterManager()

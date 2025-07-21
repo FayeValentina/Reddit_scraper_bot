@@ -200,7 +200,7 @@ class AutoScraperManager:
             logger.error(f"选择和发布评论时出错: {e}")
             return False, None
     
-    @handle_errors(default_return=False, log_prefix="检查重复内容")
+    @handle_errors(default_return=True, log_prefix="检查重复内容")
     async def _check_duplicate_content(self, content):
         """检查内容是否已经发布过"""
         with db_manager.get_connection() as conn:
