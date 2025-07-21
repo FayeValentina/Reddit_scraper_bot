@@ -1,4 +1,3 @@
-import os
 import logging
 import asyncio
 from datetime import datetime
@@ -15,6 +14,7 @@ from ai_evaluator import AIEvaluator
 from health_monitor import HealthMonitor
 from auto_scraper_manager import AutoScraperManager
 from database_manager import db_manager
+from utils import config_manager as unified_config, TwitterTextUtils
 
 load_dotenv()
 
@@ -28,11 +28,10 @@ class TwitterBot:
     """重构后的TwitterBot主类，专注于Telegram Bot逻辑"""
     
     def __init__(self):
-        self.telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
-        self.authorized_user_id = os.getenv('AUTHORIZED_USER_ID')
-        
-        if not all([self.telegram_token, self.authorized_user_id]):
-            raise ValueError("Missing required environment variables: TELEGRAM_BOT_TOKEN, AUTHORIZED_USER_ID")
+        # 使用统一配置管理器
+        telegram_config = unified_config.get_telegram_config()
+        self.telegram_token = telegram_config['bot_token']
+        self.authorized_user_id = telegram_config['authorized_user_id']
         
         # 初始化各个组件
         self.data_processor = DataProcessor()
@@ -109,7 +108,7 @@ class TwitterBot:
 • /test_twitter → 测试Twitter API连接
 
 📝 <b>注意事项:</b>
-• 消息长度限制280字符
+• 智能字符限制（支持中文、日文、韩文准确计算）
 • 图片自动压缩优化
 • 默认自动爬取关闭，需手动启动
 • 配置修改支持图形界面和命令行两种方式
@@ -263,8 +262,9 @@ class TwitterBot:
             
         message_text = update.message.text
         
-        if len(message_text) > 280:
-            await update.message.reply_text("消息太长了！Twitter限制280字符以内。")
+        if not TwitterTextUtils.is_valid_tweet(message_text):
+            tweet_length = TwitterTextUtils.get_tweet_length(message_text)
+            await update.message.reply_text(f"消息太长了！当前{tweet_length}字符，Twitter限制280字符以内。")
             return
         
         # 存储待发送的推文
@@ -303,8 +303,9 @@ class TwitterBot:
         photo = update.message.photo[-1]
         caption = update.message.caption or ""
         
-        if len(caption) > 280:
-            await update.message.reply_text("文字描述太长了！Twitter限制280字符以内。")
+        if not TwitterTextUtils.is_valid_tweet(caption):
+            caption_length = TwitterTextUtils.get_tweet_length(caption)
+            await update.message.reply_text(f"文字描述太长了！当前{caption_length}字符，Twitter限制280字符以内。")
             return
         
         # 存储待发送的推文

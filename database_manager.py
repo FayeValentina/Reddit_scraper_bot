@@ -1,5 +1,4 @@
 import sqlite3
-import asyncio
 import threading
 import logging
 import os

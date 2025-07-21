@@ -1,4 +1,3 @@
-import os
 import json
 import hmac
 import hashlib
@@ -7,7 +6,7 @@ import logging
 import asyncio
 import aiohttp
 from aiohttp import web
-from datetime import datetime
+from utils import config_manager, handle_errors
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +14,10 @@ class HealthMonitor:
     """健康监控和Webhook处理类"""
     
     def __init__(self, notification_callback=None):
-        self.app_url = os.getenv('APP_URL')
-        self.webhook_secret = os.getenv('TWITTER_WEBHOOK_SECRET')
+        # 使用统一配置管理器
+        health_config = config_manager.get_health_monitor_config()
+        self.app_url = health_config['app_url']
+        self.webhook_secret = health_config['webhook_secret']
         self.notification_callback = notification_callback
         self.runner = None
         self.site = None
@@ -47,60 +48,52 @@ class HealthMonitor:
         """健康检查端点"""
         return web.Response(text="OK", status=200)
     
+    @handle_errors(default_return=web.Response(status=500), log_prefix="处理webhook挑战")
     async def webhook_challenge(self, request):
         """处理Twitter webhook验证挑战"""
-        try:
-            # 获取挑战码
-            crc_token = request.query.get('crc_token')
-            if not crc_token or not self.webhook_secret:
-                return web.Response(status=400)
-            
-            # 生成响应
-            signature = hmac.new(
-                self.webhook_secret.encode('utf-8'),
-                crc_token.encode('utf-8'),
-                hashlib.sha256
-            ).digest()
-            
-            response_token = base64.b64encode(signature).decode('utf-8')
-            
-            return web.json_response({
-                'response_token': f'sha256={response_token}'
-            })
-            
-        except Exception as e:
-            logger.error(f"处理webhook挑战时出错: {e}")
-            return web.Response(status=500)
+        # 获取挑战码
+        crc_token = request.query.get('crc_token')
+        if not crc_token or not self.webhook_secret:
+            return web.Response(status=400)
+        
+        # 生成响应
+        signature = hmac.new(
+            self.webhook_secret.encode('utf-8'),
+            crc_token.encode('utf-8'),
+            hashlib.sha256
+        ).digest()
+        
+        response_token = base64.b64encode(signature).decode('utf-8')
+        
+        return web.json_response({
+            'response_token': f'sha256={response_token}'
+        })
     
+    @handle_errors(default_return=web.Response(status=500), log_prefix="处理私信webhook")
     async def handle_dm_webhook(self, request):
         """处理Twitter私信webhook"""
-        try:
-            # 获取签名
-            signature = request.headers.get('x-twitter-webhooks-signature')
-            if not signature:
-                logger.warning("收到没有签名的webhook请求")
-                return web.Response(status=401)
-            
-            # 读取请求体
-            body = await request.read()
-            
-            # 验证签名
-            if not self.verify_webhook_signature(body, signature):
-                logger.warning("Webhook签名验证失败")
-                return web.Response(status=401)
-            
-            # 解析JSON
-            data = json.loads(body.decode('utf-8'))
-            
-            # 检查是否是私信事件
-            if 'direct_message_events' in data:
-                await self._process_dm_events(data)
-            
-            return web.Response(text="OK")
-            
-        except Exception as e:
-            logger.error(f"处理私信webhook时出错: {e}")
-            return web.Response(status=500)
+        # 获取签名
+        signature = request.headers.get('x-twitter-webhooks-signature')
+        if not signature:
+            logger.warning("收到没有签名的webhook请求")
+            return web.Response(status=401)
+        
+        # 读取请求体
+        body = await request.read()
+        
+        # 验证签名
+        if not self.verify_webhook_signature(body, signature):
+            logger.warning("Webhook签名验证失败")
+            return web.Response(status=401)
+        
+        # 解析JSON
+        data = json.loads(body.decode('utf-8'))
+        
+        # 检查是否是私信事件
+        if 'direct_message_events' in data:
+            await self._process_dm_events(data)
+        
+        return web.Response(text="OK")
     
     async def _process_dm_events(self, data):
         """处理私信事件"""

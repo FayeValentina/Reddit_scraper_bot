@@ -1,39 +1,32 @@
-import sqlite3
 import json
-import os
 import logging
-from datetime import datetime
 from database_manager import db_manager
+from utils import config_manager as unified_config, DatabaseOperationMixin, handle_errors, TimeUtils
 
 logger = logging.getLogger(__name__)
 
-class ConfigManager:
+class ConfigManager(DatabaseOperationMixin):
     def __init__(self):
-        # 使用环境变量获取数据库路径，避免导入config
-        self.db_path = os.getenv('DATABASE_PATH', 'reddit_data.db')
-        # 创建数据目录
-        os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else '.', exist_ok=True)
+        # 使用统一配置管理器获取数据库路径
+        self.db_path = unified_config.get_database_config()['database_path']
         self._init_config_table()
         self._set_default_configs()
     
+    @handle_errors(log_prefix="初始化配置表")
     def _init_config_table(self):
         """初始化配置表"""
-        try:
-            with db_manager.get_transaction() as conn:
-                cursor = conn.cursor()
-                
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS bot_config (
-                        config_key TEXT PRIMARY KEY,
-                        config_value TEXT NOT NULL,
-                        config_type TEXT NOT NULL DEFAULT 'str',
-                        description TEXT,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-        except Exception as e:
-            logger.error(f"初始化配置表失败: {e}")
-            pass  # Allow initialization to continue
+        with db_manager.get_transaction() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS bot_config (
+                    config_key TEXT PRIMARY KEY,
+                    config_value TEXT NOT NULL,
+                    config_type TEXT NOT NULL DEFAULT 'str',
+                    description TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
     
     def _set_default_configs(self):
         """设置默认配置值"""
@@ -89,56 +82,46 @@ class ConfigManager:
             if not self.get_config(key):
                 self.set_config(key, config_data['value'], config_data['type'], config_data['description'])
     
+    @handle_errors(log_prefix="获取配置", reraise=False)
     def get_config(self, key, default=None):
-        """获取配置值"""
-        try:
-            with db_manager.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('SELECT config_value, config_type FROM bot_config WHERE config_key = ?', (key,))
-                result = cursor.fetchone()
-                
-                if result:
-                    value, config_type = result
-                    return self._convert_value(value, config_type)
-                return default
-        except Exception as e:
-            logger.error(f"获取配置 {key} 失败: {e}")
-            return default
+        """获取配置值 - 使用继承的数据库操作方法"""
+        result = self.find_records('bot_config', {'config_key': key}, limit=1)
+        if result:
+            value, config_type = result[0][1], result[0][2]  # config_value, config_type
+            return self._convert_value(value, config_type)
+        return default
     
+    @handle_errors(default_return=False, log_prefix="设置配置")
     def set_config(self, key, value, config_type='str', description=''):
-        """设置配置值"""
-        try:
-            with db_manager.get_transaction() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO bot_config 
-                    (config_key, config_value, config_type, description, updated_at)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (key, str(value), config_type, description, datetime.now()))
-            return True
-        except Exception as e:
-            logger.error(f"设置配置 {key} 失败: {e}")
-            return False
+        """设置配置值 - 使用继承的数据库操作方法"""
+        data = {
+            'config_key': key,
+            'config_value': str(value),
+            'config_type': config_type,
+            'description': description,
+            'updated_at': TimeUtils.now_string()
+        }
+        return self.insert_record('bot_config', data, replace=True)
     
+    @handle_errors(default_return={}, log_prefix="获取所有配置")
     def get_all_configs(self):
-        """获取所有配置"""
-        try:
-            with db_manager.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('SELECT config_key, config_value, config_type, description FROM bot_config ORDER BY config_key')
-                results = cursor.fetchall()
-                
-                configs = {}
-                for key, value, config_type, description in results:
-                    configs[key] = {
-                        'value': self._convert_value(value, config_type),
-                        'type': config_type,
-                        'description': description
-                    }
-                return configs
-        except Exception as e:
-            logger.error(f"获取所有配置失败: {e}")
+        """获取所有配置 - 使用继承的数据库操作方法"""
+        results = self.execute_query(
+            'SELECT config_key, config_value, config_type, description FROM bot_config ORDER BY config_key',
+            fetch_all=True
+        )
+        
+        if not results:
             return {}
+        
+        configs = {}
+        for key, value, config_type, description in results:
+            configs[key] = {
+                'value': self._convert_value(value, config_type),
+                'type': config_type,
+                'description': description
+            }
+        return configs
     
     def _convert_value(self, value, config_type):
         """根据类型转换配置值"""
@@ -155,25 +138,17 @@ class ConfigManager:
         else:  # str
             return str(value)
     
+    @handle_errors(default_return=False, log_prefix="更新配置")
     def update_config(self, key, new_value):
-        """更新现有配置的值"""
-        try:
-            with db_manager.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('SELECT config_type FROM bot_config WHERE config_key = ?', (key,))
-                result = cursor.fetchone()
-                
-                if result:
-                    with db_manager.get_transaction() as trans_conn:
-                        trans_cursor = trans_conn.cursor()
-                        trans_cursor.execute('''
-                            UPDATE bot_config 
-                            SET config_value = ?, updated_at = ?
-                            WHERE config_key = ?
-                        ''', (str(new_value), datetime.now(), key))
-                    return True
-                else:
-                    return False
-        except Exception as e:
-            logger.error(f"更新配置 {key} 失败: {e}")
+        """更新现有配置的值 - 使用继承的数据库操作方法"""
+        # 检查配置是否存在
+        existing_config = self.find_records('bot_config', {'config_key': key}, limit=1)
+        
+        if existing_config:
+            data = {
+                'config_value': str(new_value),
+                'updated_at': TimeUtils.now_string()
+            }
+            return self.update_record('bot_config', data, {'config_key': key})
+        else:
             return False

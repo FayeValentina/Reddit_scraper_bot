@@ -1,8 +1,8 @@
 import asyncpraw
-import os
 from datetime import datetime
 import asyncio
 import logging
+from utils import config_manager, handle_errors
 
 logger = logging.getLogger(__name__)
 
@@ -10,32 +10,27 @@ class AsyncRedditScraper:
     def __init__(self):
         self.reddit = None
         self._session_lock = asyncio.Lock()
+        self.credentials = config_manager.get_reddit_config()
     
+    @handle_errors(log_prefix="Reddit实例初始化")
     async def _get_reddit_instance(self):
         """获取Reddit实例，使用单例模式"""
         if self.reddit is None:
             async with self._session_lock:
                 if self.reddit is None:
-                    # 直接从环境变量获取配置，避免导入config
-                    username = os.getenv('REDDIT_USERNAME')
-                    password = os.getenv('REDDIT_PASSWORD')
-                    client_id = os.getenv('REDDIT_CLIENT_ID')
-                    client_secret = os.getenv('REDDIT_CLIENT_SECRET')
-                    user_agent = os.getenv('REDDIT_USER_AGENT', 'RedditScraper/1.0')
-                    
-                    if username and password:
+                    if self.credentials['username'] and self.credentials['password']:
                         self.reddit = asyncpraw.Reddit(
-                            client_id=client_id,
-                            client_secret=client_secret,
-                            user_agent=user_agent,
-                            username=username,
-                            password=password
+                            client_id=self.credentials['client_id'],
+                            client_secret=self.credentials['client_secret'],
+                            user_agent=self.credentials['user_agent'],
+                            username=self.credentials['username'],
+                            password=self.credentials['password']
                         )
                     else:
                         self.reddit = asyncpraw.Reddit(
-                            client_id=client_id,
-                            client_secret=client_secret,
-                            user_agent=user_agent
+                            client_id=self.credentials['client_id'],
+                            client_secret=self.credentials['client_secret'],
+                            user_agent=self.credentials['user_agent']
                         )
         return self.reddit
     
@@ -283,21 +278,5 @@ class AsyncRedditScraper:
             await self.reddit.close()
             logger.info("Reddit连接已关闭")
 
-# 保持向后兼容的同步接口
-class RedditScraper:
-    def __init__(self):
-        self.async_scraper = AsyncRedditScraper()
-    
-    def scrape_posts_with_details(self, subreddit_name, limit=50, sort_by='hot', comments_limit=20, time_filter='all'):
-        """
-        同步接口，内部使用异步实现
-        """
-        return asyncio.run(self.async_scraper.scrape_posts_with_details(
-            subreddit_name, limit, sort_by, comments_limit, time_filter
-        ))
-    
-    def close(self):
-        """
-        关闭连接
-        """
-        asyncio.run(self.async_scraper.close())
+# 注意：原有的同步 RedditScraper 类已被移除
+# 请直接使用 AsyncRedditScraper 类进行异步操作

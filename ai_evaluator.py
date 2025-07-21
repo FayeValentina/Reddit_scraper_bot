@@ -3,6 +3,7 @@ import json
 import logging
 import asyncio
 from google import genai
+from utils import config_manager, handle_errors
 
 logger = logging.getLogger(__name__)
 
@@ -11,13 +12,14 @@ class AIEvaluator:
     
     def __init__(self):
         self.gemini_client = None
+        self.credentials = config_manager.get_gemini_config()
         self._initialize_client()
     
+    @handle_errors(log_prefix="Gemini API初始化")
     def _initialize_client(self):
         """初始化Gemini API客户端"""
-        gemini_api_key = os.getenv('GEMINI_API_KEY')
-        if gemini_api_key:
-            os.environ['GEMINI_API_KEY'] = gemini_api_key
+        if self.credentials['api_key']:
+            os.environ['GEMINI_API_KEY'] = self.credentials['api_key']
             self.gemini_client = genai.Client()
             logger.info("Gemini API客户端初始化成功")
         else:

@@ -1,9 +1,8 @@
 import logging
 import asyncio
-import sqlite3
 from datetime import datetime, timedelta
-from typing import Optional, Tuple, List
 from database_manager import db_manager
+from utils import TimeUtils, handle_errors, TwitterTextUtils
 
 logger = logging.getLogger(__name__)
 
@@ -137,8 +136,21 @@ class AutoScraperManager:
         """使用AI筛选评论质量"""
         logger.info(f"总共获取了 {len(all_comments)} 条评论")
         
+        # 先过滤掉超长内容（避免截断造成的体验问题）
+        valid_length_comments = []
+        for comment in all_comments:
+            content = comment.get('body', '')
+            if TwitterTextUtils.is_valid_tweet(content):
+                valid_length_comments.append(comment)
+        
+        logger.info(f"过滤超长内容后剩余 {len(valid_length_comments)} 条评论")
+        
+        if not valid_length_comments:
+            logger.warning("所有评论都超过Twitter字符限制")
+            return [], 0
+        
         # 按分数排序，取前N条
-        sorted_comments = sorted(all_comments, key=lambda x: x.get('score', 0), reverse=True)
+        sorted_comments = sorted(valid_length_comments, key=lambda x: x.get('score', 0), reverse=True)
         top_comments = sorted_comments[:top_comments_count]
         
         logger.info(f"选择前 {len(top_comments)} 条高分评论进行AI筛选")
@@ -165,10 +177,8 @@ class AutoScraperManager:
             
             for i, comment in enumerate(sorted_comments):
                 content = comment.get('body', '')
-                if len(content) > 280:
-                    content = content[:277] + "..."
                 
-                # 检查是否重复
+                # 检查是否重复（内容已经在前面过滤过长度）
                 is_duplicate = await self._check_duplicate_content(content)
                 
                 if not is_duplicate:
@@ -190,32 +200,26 @@ class AutoScraperManager:
             logger.error(f"选择和发布评论时出错: {e}")
             return False, None
     
+    @handle_errors(default_return=False, log_prefix="检查重复内容")
     async def _check_duplicate_content(self, content):
         """检查内容是否已经发布过"""
-        try:
-            with db_manager.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # 查询最近7天内是否有相同内容
-                seven_days_ago = datetime.now() - timedelta(days=7)
-                cursor.execute("""
-                    SELECT COUNT(*) FROM reddit_comments 
-                    WHERE body = ? AND sent_at > ? AND tweet_id IS NOT NULL
-                """, (content, seven_days_ago.strftime('%Y-%m-%d %H:%M:%S')))
-                
-                count = cursor.fetchone()[0]
-                return count > 0
-                
-        except Exception as e:
-            logger.error(f"检查重复内容时出错: {e}")
-            return False
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 查询最近7天内是否有相同内容
+            seven_days_ago = TimeUtils.days_ago(7)
+            cursor.execute("""
+                SELECT COUNT(*) FROM reddit_comments 
+                WHERE body = ? AND sent_at > ? AND tweet_id IS NOT NULL
+            """, (content, TimeUtils.format_timestamp(seven_days_ago)))
+            
+            count = cursor.fetchone()[0]
+            return count > 0
     
     async def _auto_post_to_twitter(self, comment, api_call_count, scrape_duration=0):
         """自动发布评论到Twitter"""
         try:
             content = comment.get('body', '')
-            if len(content) > 280:
-                content = content[:277] + "..."
             
             result = await self.twitter_manager.post_text_tweet(content)
             
@@ -224,7 +228,7 @@ class AutoScraperManager:
                 comment['tweet_id'] = result['tweet_id']
                 comment['sent_at'] = datetime.now()
                 comment['api_call_count'] = api_call_count
-                comment['body'] = result['content']
+                comment['body'] = content  # 存储原始内容，保持一致性
                 
                 # 保存到数据库
                 self.data_processor.save_comments_to_database([comment])

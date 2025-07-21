@@ -1,10 +1,10 @@
-import os
 import logging
 import tweepy
 import tempfile
 import re
+import os
 from PIL import Image
-from datetime import datetime
+from utils import config_manager, handle_errors, TwitterTextUtils
 
 logger = logging.getLogger(__name__)
 
@@ -12,37 +12,29 @@ class TwitterManager:
     """Twitter API管理类，负责所有Twitter相关操作"""
     
     def __init__(self):
-        self.twitter_api_key = os.getenv('TWITTER_API_KEY')
-        self.twitter_api_secret = os.getenv('TWITTER_API_SECRET')
-        self.twitter_access_token = os.getenv('TWITTER_ACCESS_TOKEN')
-        self.twitter_access_token_secret = os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
-        self.twitter_bearer_token = os.getenv('TWITTER_BEARER_TOKEN')
+        # 使用统一配置管理器
+        self.credentials = config_manager.get_twitter_config()
         
         # 初始化Twitter客户端
         self.twitter_client = None
         self._initialize_client()
     
+    @handle_errors(log_prefix="Twitter API初始化")
     def _initialize_client(self):
         """初始化Twitter API客户端"""
-        if not all([self.twitter_api_key, self.twitter_api_secret, 
-                   self.twitter_access_token, self.twitter_access_token_secret, 
-                   self.twitter_bearer_token]):
+        if not all(self.credentials.values()):
             logger.error("Twitter API配置不完整")
             return
         
-        try:
-            self.twitter_client = tweepy.Client(
-                bearer_token=self.twitter_bearer_token,
-                consumer_key=self.twitter_api_key,
-                consumer_secret=self.twitter_api_secret,
-                access_token=self.twitter_access_token,
-                access_token_secret=self.twitter_access_token_secret,
-                wait_on_rate_limit=True
-            )
-            logger.info("Twitter API初始化成功（V2 API + OAuth 1.0a）")
-        except Exception as e:
-            logger.error(f"Twitter API初始化失败: {e}")
-            self.twitter_client = None
+        self.twitter_client = tweepy.Client(
+            bearer_token=self.credentials['bearer_token'],
+            consumer_key=self.credentials['api_key'],
+            consumer_secret=self.credentials['api_secret'],
+            access_token=self.credentials['access_token'],
+            access_token_secret=self.credentials['access_token_secret'],
+            wait_on_rate_limit=True
+        )
+        logger.info("Twitter API初始化成功（V2 API + OAuth 1.0a）")
     
     def is_available(self) -> bool:
         """检查Twitter API是否可用"""
@@ -89,10 +81,8 @@ class TwitterManager:
             return {'success': False, 'error': 'Twitter API未初始化'}
         
         try:
-            # 清理内容
+            # 清理内容（不截断，内容已在上游过滤过长度）
             content = self._clean_content(text)
-            if len(content) > 280:
-                content = content[:277] + "..."
             
             response = self.twitter_client.create_tweet(text=content)
             tweet_id = response.data['id']
@@ -124,18 +114,16 @@ class TwitterManager:
                     
                     # 上传媒体（使用V1.1 API）
                     auth = tweepy.OAuth1UserHandler(
-                        self.twitter_api_key,
-                        self.twitter_api_secret,
-                        self.twitter_access_token,
-                        self.twitter_access_token_secret
+                        self.credentials['api_key'],
+                        self.credentials['api_secret'],
+                        self.credentials['access_token'],
+                        self.credentials['access_token_secret']
                     )
                     twitter_api_v1 = tweepy.API(auth)
                     media = twitter_api_v1.media_upload(optimized_path)
                     
                     # 创建推文（使用V2 API）
                     content = self._clean_content(text)
-                    if len(content) > 280:
-                        content = content[:277] + "..."
                     
                     response = self.twitter_client.create_tweet(
                         text=content,
@@ -162,6 +150,7 @@ class TwitterManager:
         except Exception as e:
             return self._handle_twitter_error(e)
     
+    @handle_errors(log_prefix="图片优化")
     def _optimize_image(self, image_path: str) -> str:
         """优化图片"""
         with Image.open(image_path) as img:
