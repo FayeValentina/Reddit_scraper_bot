@@ -7,6 +7,9 @@
 ```bash
 # 连接到Oracle Cloud虚拟机
 ssh -i ~/.ssh/oracle-ssh-key.pem ubuntu@217.142.254.48
+
+# 简化连接方式（需要先配置 ~/.ssh/config）
+ssh reddit-bot
 ```
 
 ## Bot服务管理
@@ -61,8 +64,8 @@ source venv/bin/activate
 pip install -r requirements.txt --upgrade
 sudo systemctl start reddit-bot.service
 
-# 方法2：使用更新脚本（如果已创建）
-~/update-bot.sh
+# 方法2：使用更新脚本（推荐）
+update-bot.sh
 ```
 
 ## 配置文件管理
