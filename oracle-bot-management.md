@@ -2,6 +2,208 @@
 
 这个文件包含管理部署在Oracle Cloud上的Reddit Bot的所有常用命令。
 
+## 初始化部署（首次安装）
+
+### 1. 系统基础环境准备
+
+```bash
+# 检查系统版本
+lsb_release -a
+
+# 更新系统包（选择15跳过服务重启）
+sudo apt update && sudo apt upgrade -y
+```
+
+### 2. 安装必要的系统依赖
+
+```bash
+# 安装基础工具
+sudo apt install -y curl wget git vim htop sqlite3 nano
+
+# 安装Python 3.11和pip
+sudo apt install -y python3.11 python3.11-venv python3.11-dev python3-pip
+
+# 安装构建工具（某些Python包需要）
+sudo apt install -y build-essential
+```
+
+### 3. 从GitHub克隆项目
+
+```bash
+# 克隆项目到用户主目录
+cd ~
+git clone https://github.com/FayeValentina/Reddit_scraper_bot.git reddit-bot
+
+# 进入项目目录
+cd reddit-bot
+
+# 查看项目文件
+ls -la
+```
+
+### 4. 创建Python虚拟环境
+
+```bash
+# 在项目目录中创建虚拟环境
+python3.11 -m venv venv
+
+# 激活虚拟环境
+source venv/bin/activate
+
+# 升级pip
+pip install --upgrade pip
+```
+
+### 5. 安装Python依赖
+
+```bash
+# 安装项目依赖
+pip install -r requirements.txt
+
+# 验证重要依赖是否安装成功
+python3 -c "import asyncpraw, tweepy, telegram, google.genai; print('主要依赖安装成功')"
+
+# 验证twitter_text导入（包名为twitter-text-parser，导入名为twitter_text）
+python3 -c "import twitter_text; print('twitter_text导入成功')"
+```
+
+### 6. 配置环境变量
+
+```bash
+# 复制.env.example为.env
+cp .env.example .env
+
+# 编辑.env文件，填入实际的API密钥
+nano .env
+
+# 验证.env文件配置（检查前几行）
+head -n 5 .env
+```
+
+### 7. 创建systemd服务
+
+```bash
+# 创建systemd服务文件
+sudo nano /etc/systemd/system/reddit-bot.service
+```
+
+**服务文件内容：**
+```ini
+[Unit]
+Description=Reddit to Twitter Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/reddit-bot
+Environment=PATH=/home/ubuntu/reddit-bot/venv/bin
+ExecStart=/home/ubuntu/reddit-bot/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 8. 启用并启动服务
+
+```bash
+# 重新加载systemd配置
+sudo systemctl daemon-reload
+
+# 启用开机自启动
+sudo systemctl enable reddit-bot.service
+
+# 启动服务
+sudo systemctl start reddit-bot.service
+
+# 检查服务状态
+sudo systemctl status reddit-bot.service
+
+# 查看实时日志确认正常运行
+sudo journalctl -u reddit-bot.service -f
+```
+
+### 9. 初始化验证
+
+```bash
+# 测试健康端点
+curl http://localhost:8000/health
+
+# 检查bot进程
+ps aux | grep python
+
+# 检查端口监听
+ss -tuln | grep :8000
+```
+
+### 10. 创建自动更新脚本（推荐）
+
+```bash
+# 在项目目录中创建更新脚本
+cd ~/reddit-bot
+nano update-bot.sh
+```
+
+**脚本内容：**
+```bash
+#!/bin/bash
+
+# Reddit Bot 自动更新脚本
+# 使用方法: ./update-bot.sh
+
+echo "🔄 开始更新 Reddit Bot..."
+
+# 停止服务
+echo "⏹️  停止 reddit-bot 服务..."
+sudo systemctl stop reddit-bot.service
+
+# 进入项目目录
+cd ~/reddit-bot
+
+# 拉取最新代码
+echo "📥 拉取最新代码..."
+git pull origin main
+
+# 激活虚拟环境并更新依赖
+echo "📦 更新Python依赖..."
+source venv/bin/activate
+pip install -r requirements.txt --upgrade
+
+# 启动服务
+echo "▶️  启动 reddit-bot 服务..."
+sudo systemctl start reddit-bot.service
+
+# 检查服务状态
+echo "✅ 检查服务状态..."
+sleep 3
+sudo systemctl status reddit-bot.service --no-pager
+
+echo "🎉 更新完成！"
+echo "💡 使用以下命令查看实时日志:"
+echo "   sudo journalctl -u reddit-bot.service -f"
+```
+
+```bash
+# 给脚本添加执行权限
+chmod +x update-bot.sh
+
+# 测试脚本
+./update-bot.sh
+
+# 可选：创建全局别名方便使用
+mkdir -p ~/bin
+ln -sf ~/reddit-bot/update-bot.sh ~/bin/update-bot
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+---
+
 ## SSH连接
 
 ```bash
@@ -65,7 +267,10 @@ pip install -r requirements.txt --upgrade
 sudo systemctl start reddit-bot.service
 
 # 方法2：使用更新脚本（推荐）
-update-bot.sh
+./update-bot.sh
+
+# 或者如果配置了全局别名
+update-bot
 ```
 
 ## 配置文件管理
